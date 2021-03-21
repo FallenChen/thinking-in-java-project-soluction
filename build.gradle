@@ -1,0 +1,23 @@
+plugins {
+    id 'java'
+}
+
+group 'org.garry'
+version '0.01'
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+dependencies {
+    // https://mvnrepository.com/artifact/org.springframework/spring-core
+    implementation group: 'org.springframework', name: 'spring-core', version: '5.0.0.RELEASE'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.6.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
+}
+
+test {
+    useJUnitPlatform()
+}
