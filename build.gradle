@@ -7,12 +7,22 @@ version '0.01'
 
 repositories {
     mavenLocal()
-    mavenCentral()
+//    mavenCentral()
+    maven { url 'https://maven.aliyun.com/repository/jcenter/'}
 }
 
 dependencies {
     // https://mvnrepository.com/artifact/org.springframework/spring-core
     implementation group: 'org.springframework', name: 'spring-core', version: '5.0.0.RELEASE'
+    // https://mvnrepository.com/artifact/mysql/mysql-connector-java
+    implementation group: 'mysql', name: 'mysql-connector-java', version: '5.1.48'
+    // https://mvnrepository.com/artifact/javax.transaction/javax.transaction-api
+    implementation group: 'javax.transaction', name: 'javax.transaction-api', version: '1.2'
+    // https://mvnrepository.com/artifact/javax.interceptor/javax.interceptor-api
+    implementation group: 'javax.interceptor', name: 'javax.interceptor-api', version: '1.2'
+
+
+
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.6.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
