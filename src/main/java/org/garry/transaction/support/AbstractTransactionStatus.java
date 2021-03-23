@@ -1,6 +1,7 @@
 package org.garry.transaction.support;
 
 import org.garry.transaction.SavepointManager;
+import org.garry.transaction.TransactionException;
 import org.garry.transaction.TransactionStatus;
 import org.springframework.lang.Nullable;
 
@@ -20,6 +21,53 @@ public abstract class AbstractTransactionStatus implements TransactionStatus {
 
     public void setRollbackOnly(boolean rollbackOnly) {
         this.rollbackOnly = true;
+    }
+
+    /**
+     * Determine the rollback-only flag via checking both the local rollback-only flag
+     * of this TransactionStatus and global rollback-only flag of the underlying transaction, if any
+     * @return
+     */
+    public boolean isRollbackOnly()
+    {
+        return (isLocalRollbackOnly() || isGlobalRollbackOnly());
+    }
+
+    /**
+     * Determine the rollback-only flag via checking this TransactionStatus
+     * Will only return "true" if the application called {@code setRollbackOnly}
+     * on this TransactionStatus object
+     * @return
+     */
+    public boolean isLocalRollbackOnly()
+    {
+        return this.rollbackOnly;
+    }
+
+    /**
+     * Template method for determining the global rollback-only flag of the
+     * underlying transaction, if any
+     * @return
+     */
+    public boolean isGlobalRollbackOnly()
+    {
+        return false;
+    }
+
+    /**
+     * This implementations is empty, considering flush as a no-op
+     */
+    public void flush()
+    {
+
+    }
+
+    /**
+     * Mark this transaction as completed, that is , committed or rolled back
+     */
+    public void setCompleted()
+    {
+        this.completed = true;
     }
 
     /**
@@ -86,6 +134,42 @@ public abstract class AbstractTransactionStatus implements TransactionStatus {
         setSavepoint(null);
     }
 
+    //
+    // Implementation of SavepointManager
+    //
+
+    /**
+     * This implementation delegates to a SavepointManager for the
+     * underlying transaction, if possible
+     * @return
+     * @throws TransactionException
+     */
+    @Override
+    public Object createSavepoint() throws TransactionException {
+       return getSavepointManager().createSavepoint();
+    }
+
+    /**
+     * This implementation delegates to a SavepointManager for the
+     * underlying transaction, if possible
+     * @param savepoint
+     * @throws TransactionException
+     */
+    @Override
+    public void rollbackToSavepoint(Object savepoint) throws TransactionException {
+        getSavepointManager().rollbackToSavepoint(savepoint);
+    }
+
+    /**
+     * This implementation delegates to a SavepointManager for the
+     * underlying transaction, if possible
+     * @param savepoint
+     * @throws TransactionException
+     */
+    @Override
+    public void releaseSavepoint(Object savepoint) throws TransactionException {
+        getSavepointManager().releaseSavepoint(savepoint);
+    }
 
     /**
      * Return a SavepointManager for the underlying transaction, if possible

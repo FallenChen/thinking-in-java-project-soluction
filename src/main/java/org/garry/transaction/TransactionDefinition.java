@@ -32,6 +32,8 @@ public interface TransactionDefinition {
 
     int TIMEOUT_DEFAULT = -1;
 
+    int getPropagationBehavior();
+
     int getIsolationLevel();
 
     int getTimeout();
