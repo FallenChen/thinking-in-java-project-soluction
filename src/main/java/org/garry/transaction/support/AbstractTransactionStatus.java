@@ -19,7 +19,8 @@ public abstract class AbstractTransactionStatus implements TransactionStatus {
     @Nullable
     private Object savepoint;
 
-    public void setRollbackOnly(boolean rollbackOnly) {
+    @Override
+    public void setRollbackOnly() {
         this.rollbackOnly = true;
     }
 
@@ -68,6 +69,11 @@ public abstract class AbstractTransactionStatus implements TransactionStatus {
     public void setCompleted()
     {
         this.completed = true;
+    }
+
+    @Override
+    public boolean isCompleted() {
+        return this.completed;
     }
 
     /**
