@@ -14,6 +14,7 @@ repositories {
 dependencies {
     // https://mvnrepository.com/artifact/org.springframework/spring-core
     implementation group: 'org.springframework', name: 'spring-core', version: '5.0.0.RELEASE'
+    implementation group: 'org.springframework', name: 'spring-aop', version: '5.0.0.RELEASE'
     // https://mvnrepository.com/artifact/mysql/mysql-connector-java
     implementation group: 'mysql', name: 'mysql-connector-java', version: '5.1.48'
     // https://mvnrepository.com/artifact/javax.transaction/javax.transaction-api
