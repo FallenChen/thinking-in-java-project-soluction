@@ -3,11 +3,11 @@ package org.garry.transaction.support;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.core.NamedThreadLocal;
+import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 import org.springframework.lang.Nullable;
+import org.springframework.util.Assert;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 /**
  * Central delegate that manages resources and transaction synchronizations per thread.
@@ -74,7 +74,8 @@ public abstract class TransactionSynchronizationManager {
      * currently no resource bound
      */
     public static Map<Object, Object> getResourceMap() {
-        return null;
+        Map<Object, Object> map = resources.get();
+        return (map != null ? Collections.unmodifiableMap(map) : Collections.emptyMap());
     }
 
     /**
@@ -84,7 +85,9 @@ public abstract class TransactionSynchronizationManager {
      * @return
      */
     public static boolean hasResource(Object key) {
-        return false;
+        Object actualKey = TransactionSynchronizationUtils.unwrapResourceIfNecessary(key);
+        Object value = doGetResource(actualKey);
+        return (value != null);
     }
 
     /**
@@ -95,7 +98,14 @@ public abstract class TransactionSynchronizationManager {
      */
     @Nullable
     public static Object getResource(Object key) {
-        return null;
+        Object actualKey = TransactionSynchronizationUtils.unwrapResourceIfNecessary(key);
+        Object value = doGetResource(actualKey);
+        if(value !=null && logger.isTraceEnabled())
+        {
+            logger.trace("Retrieved vale [" + value + "] for key [" + actualKey + "] bound to thread ["+
+                    Thread.currentThread().getName() + "]");
+        }
+        return value;
     }
 
     /**
@@ -104,8 +114,26 @@ public abstract class TransactionSynchronizationManager {
      * @param actualKey
      * @return
      */
+    @Nullable
     private static Object doGetResource(Object actualKey) {
-        return null;
+        Map<Object, Object> map = resources.get();
+        if(map == null)
+        {
+            return null;
+        }
+        Object value = map.get(actualKey);
+        // Transparently remove ResourceHolder that was marked as void...
+        if(value instanceof ResourceHolder && ((ResourceHolder) value).isVoid())
+        {
+            map.remove(actualKey);
+            // Remove entire ThreadLocal if empty...
+            if(map.isEmpty())
+            {
+                resources.remove();
+            }
+            value = null;
+        }
+        return value;
     }
 
     /**
@@ -116,7 +144,31 @@ public abstract class TransactionSynchronizationManager {
      * @throws IllegalStateException if there is already a value bound to the thread
      */
     public static void bindResource(Object key, Object value) throws IllegalStateException {
-
+        Object actualKey = TransactionSynchronizationUtils.unwrapResourceIfNecessary(key);
+        Assert.notNull(value, "Value must not be null");
+        Map<Object, Object> map = resources.get();
+        // set ThreadLocal map if none found
+        if(map == null)
+        {
+            map = new HashMap<>();
+            resources.set(map);
+        }
+        Object oldValue = map.put(actualKey, value);
+        // Transparently suppress a ResourceHolder that was marked as void...
+        if(oldValue instanceof ResourceHolder && ((ResourceHolder)oldValue).isVoid())
+        {
+            oldValue = null;
+        }
+        if(oldValue != null)
+        {
+            throw new IllegalStateException("Already value [" + oldValue + "] for key ["+
+                    actualKey + " ] bound to thread [" + Thread.currentThread().getName() + "]");
+        }
+        if(logger.isTraceEnabled())
+        {
+            logger.trace("Bound value [" + value + "] for key [" + actualKey + "] to thread [" +
+                    Thread.currentThread().getName() + "]");
+        }
     }
 
     /**
@@ -127,7 +179,15 @@ public abstract class TransactionSynchronizationManager {
      * @throws IllegalStateException if there is no value bound to the thread
      */
     public static Object unbindResource(Object key) throws IllegalStateException {
-        return null;
+        Object actualKey = TransactionSynchronizationUtils.unwrapResourceIfNecessary(key);
+        Object value = doUnbindResource(actualKey);
+        if(value == null)
+        {
+            throw new IllegalStateException(
+                    "No value for key [" + actualKey + "] bound to thread [" + Thread.currentThread().getName() + "]"
+            );
+        }
+        return value;
     }
 
     /**
@@ -137,7 +197,8 @@ public abstract class TransactionSynchronizationManager {
      * @return
      */
     public static Object unbindResourceIfPossible(Object key) {
-        return null;
+        Object actualKey = TransactionSynchronizationUtils.unwrapResourceIfNecessary(key);
+        return doUnbindResource(actualKey);
     }
 
     /**
@@ -147,7 +208,28 @@ public abstract class TransactionSynchronizationManager {
      * @return
      */
     private static Object doUnbindResource(Object actualKey) {
-        return null;
+        Map<Object, Object> map = resources.get();
+        if(map == null)
+        {
+            return null;
+        }
+        Object value = map.remove(actualKey);
+        // Remove entire ThreadLocal if empty...
+        if(map.isEmpty())
+        {
+            resources.remove();
+        }
+        // Transparently suppress a ResourceHolder that was marked as void...
+        if(value instanceof ResourceHolder && ((ResourceHolder)value).isVoid())
+        {
+            value = null;
+        }
+        if(value != null && logger.isTraceEnabled())
+        {
+            logger.trace("Removed value [" + value + "] for key [" + actualKey + "] from thread ["
+            + Thread.currentThread().getName() + "]");
+        }
+        return value;
     }
 
     // Management of transaction synchronizations
@@ -159,7 +241,7 @@ public abstract class TransactionSynchronizationManager {
      * @return
      */
     public static boolean isSynchronizationActive() {
-        return false;
+        return (synchronizations.get() != null);
     }
 
     /**
@@ -167,7 +249,12 @@ public abstract class TransactionSynchronizationManager {
      * Called by a transaction manager on transaction begin
      */
     public static void initSynchronization() {
-
+        if(isSynchronizationActive())
+        {
+            throw new IllegalStateException("Cannot active transaction synchronization - already active");
+        }
+        logger.trace("Initializing transaction synchronization");
+        synchronizations.set(new LinkedHashSet<>());
     }
 
     /**
@@ -177,7 +264,12 @@ public abstract class TransactionSynchronizationManager {
      * @param synchronization
      */
     public static void registerSynchronization(TransactionSynchronization synchronization) {
-
+        Assert.notNull(synchronization, "TransactionSynchronization must not be null");
+        if(!isSynchronizationActive())
+        {
+            throw new IllegalStateException("Transaction synchronization is not active");
+        }
+        synchronizations.get().add(synchronization);
     }
 
     /**
@@ -187,7 +279,25 @@ public abstract class TransactionSynchronizationManager {
      * @return
      */
     public static List<TransactionSynchronization> getSynchronizations() {
-        return null;
+        Set<TransactionSynchronization> synchs = synchronizations.get();
+        if(synchs == null)
+        {
+            throw new IllegalStateException("Transaction synchronization is not active");
+        }
+        // Return unmodifiable snapshot, to avoid ConcurrentModificationExceptions
+        // while iterating and invoking synchronization callbacks that in turn
+        // might register further synchronizations
+        if(synchs.isEmpty())
+        {
+            return Collections.emptyList();
+        }
+        else
+        {
+            // Sort lazily here, not in registerSynchronization
+            List<TransactionSynchronization> sortedSynchs = new ArrayList<>(synchs);
+            AnnotationAwareOrderComparator.sort(sortedSynchs);
+            return Collections.unmodifiableList(sortedSynchs);
+        }
     }
 
     /**
@@ -195,7 +305,12 @@ public abstract class TransactionSynchronizationManager {
      * Called by the transaction manager on transaction cleanup.
      */
     public static void clearSynchronization() {
-
+        if(!isSynchronizationActive())
+        {
+            throw new IllegalStateException("Cannot deactivate transaction synchronization - not active");
+        }
+        logger.trace("Clearing transaction synchronization");
+        synchronizations.remove();
     }
 
     // Exposure of transaction characteristics

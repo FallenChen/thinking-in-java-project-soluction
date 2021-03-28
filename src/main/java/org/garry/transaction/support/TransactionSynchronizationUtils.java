@@ -31,6 +31,7 @@ public abstract class TransactionSynchronizationUtils {
     }
 
     /**
+     * todo why???
      * Unwrap the given resource handle if necessary; otherwise return
      * @param resource
      * @return
