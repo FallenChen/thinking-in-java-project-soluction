@@ -22,7 +22,153 @@ public abstract class ResourceHolderSynchronization<H extends ResourceHolder, K>
     public void suspend() {
         if (this.holderActive)
         {
-
+            TransactionSynchronizationManager.unbindResource(this.resourceKey);
         }
+    }
+
+    @Override
+    public void resume() {
+        if(this.holderActive)
+        {
+            TransactionSynchronizationManager.bindResource(this.resourceKey, this.resourceHolder);
+        }
+    }
+
+    @Override
+    public void flush() {
+        flushResource(this.resourceHolder);
+    }
+
+    @Override
+    public void beforeCommit(boolean readOnly) {
+
+    }
+
+    @Override
+    public void beforeCompletion() {
+        if(shouldUnbindAtCompletion())
+        {
+            TransactionSynchronizationManager.unbindResource(this.resourceKey);
+            this.holderActive = false;
+            if(shouldReleaseBeforeCompletion())
+            {
+                releaseResource(this.resourceHolder,this.resourceKey);
+            }
+        }
+    }
+
+    @Override
+    public void afterCommit() {
+        if(!shouldReleaseBeforeCompletion())
+        {
+            processResourceAfterCommit(this.resourceHolder);
+        }
+    }
+
+    @Override
+    public void afterCompletion(int status) {
+        if(shouldUnbindAtCompletion())
+        {
+            boolean releaseNecessary = false;
+            if(this.holderActive)
+            {
+                // The thread-bound resource holder might not available anymore,
+                // since afterCompletion might get called from a different thread.
+                this.holderActive = false;
+                TransactionSynchronizationManager.unbindResourceIfPossible(this.resourceKey);
+                this.resourceHolder.unbound();
+                releaseNecessary = true;
+            }
+            else
+            {
+                releaseNecessary = shouldReleaseAfterCompletion(this.resourceHolder);
+            }
+            if(releaseNecessary)
+            {
+                releaseResource(this.resourceHolder, this.resourceKey);
+            }
+        }
+        else
+        {
+            // Probably a pre-bound resource...
+            cleanupResource(this.resourceHolder, this.resourceKey, (status == STATUS_COMMITTED));
+        }
+        this.resourceHolder.reset();
+    }
+
+    /**
+     * Return whether this holder should be unbound at completion
+     * (or should rather be left bound to the thread after the transaction)
+     * @return
+     */
+    protected boolean shouldUnbindAtCompletion()
+    {
+        return true;
+    }
+
+    /**
+     * Return whether this holder's resource should be released before
+     * transaction completion ({@code true}) or rather after
+     * transaction completion ({@code false})
+     * Note that resources will only be released when they are
+     * unbound from the thread
+     * @return
+     */
+    protected boolean shouldReleaseBeforeCompletion()
+    {
+        return true;
+    }
+
+    /**
+     * Return whether this holder's resource should be released after
+     * transaction completion ({@code true})
+     * The default implementation returns {@code !shouldReleaseBeforeCompletion()},
+     * releasing after completion if no attempt was made before completion.
+     * @param resourceHolder
+     * @return
+     */
+    protected boolean shouldReleaseAfterCompletion(H resourceHolder)
+    {
+        return !shouldReleaseBeforeCompletion();
+    }
+
+    /**
+     * Flush callback for the given resource holder
+     * @param resourceHolder
+     */
+    protected void flushResource(H resourceHolder)
+    {
+
+    }
+
+    /**
+     * After-commit callback for the given resource holder.
+     * Only called when the resource hasn't been released yet
+     * @param resourceHolder
+     */
+    protected void processResourceAfterCommit(H resourceHolder)
+    {
+
+    }
+
+    /**
+     * Release the given resource (after it has been unbound from the thread)
+     * @param resourceHolder
+     * @param resourceKey
+     */
+    protected void releaseResource(H resourceHolder, K resourceKey)
+    {
+
+    }
+
+    /**
+     * Perform a cleanup on the given resource (which is left bound to the thread)
+     * @param resourceHolder
+     * @param resourceKey
+     * @param committed
+     */
+    protected void cleanupResource(H resourceHolder, K resourceKey, boolean committed)
+    {
+
     }
 }

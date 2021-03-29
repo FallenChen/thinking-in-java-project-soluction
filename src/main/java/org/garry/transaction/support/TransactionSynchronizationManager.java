@@ -322,7 +322,7 @@ public abstract class TransactionSynchronizationManager {
      * @param name
      */
     public static void setCurrentTransactionName(@Nullable String name) {
-
+        currentTransactionName.set(name);
     }
 
     /**
@@ -333,7 +333,7 @@ public abstract class TransactionSynchronizationManager {
      * @return
      */
     public static String getCurrentTransactionName() {
-        return null;
+        return currentTransactionName.get();
     }
 
     /**
@@ -343,7 +343,7 @@ public abstract class TransactionSynchronizationManager {
      * @param readOnly
      */
     public static void setCurrentTransactionReadOnly(boolean readOnly) {
-
+        currentTransactionReadOnly.set(readOnly ? Boolean.TRUE : null);
     }
 
     /**
@@ -354,7 +354,7 @@ public abstract class TransactionSynchronizationManager {
      * @return
      */
     public static boolean isCurrentTransactionReadOnly() {
-        return false;
+        return (currentTransactionReadOnly.get() != null);
     }
 
     /**
@@ -365,7 +365,7 @@ public abstract class TransactionSynchronizationManager {
      *                       JDBC Connection constants
      */
     public static void setCurrentTransactionIsolationLevel(@Nullable Integer isolationLevel) {
-
+        currentTransactionIsolationLevel.set(isolationLevel);
     }
 
     /**
@@ -386,7 +386,7 @@ public abstract class TransactionSynchronizationManager {
      */
     public static void setActualTransactionActive(boolean active)
     {
-
+        actualTransactionActive.set(active ? Boolean.TRUE : null);
     }
 
     /**
@@ -397,7 +397,7 @@ public abstract class TransactionSynchronizationManager {
      */
     public static boolean isActualTransactionActive()
     {
-        return false;
+        return (actualTransactionActive.get() != null);
     }
 
     /**
