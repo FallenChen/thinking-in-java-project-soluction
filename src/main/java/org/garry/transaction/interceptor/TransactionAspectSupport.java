@@ -1,5 +1,7 @@
 package org.garry.transaction.interceptor;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.garry.transaction.PlatformTransactionManager;
 import org.garry.transaction.TransactionStatus;
 import org.garry.transaction.support.CallbackPreferringPlatformTransactionManager;
@@ -8,6 +10,7 @@ import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.core.NamedThreadLocal;
 import org.springframework.lang.Nullable;
+import org.springframework.util.Assert;
 
 import java.lang.reflect.Method;
 import java.util.Properties;
@@ -24,6 +27,8 @@ public abstract class TransactionAspectSupport implements BeanFactoryAware, Init
 
     private static final ThreadLocal<TransactionInfo> transactionInfoHolder =
             new NamedThreadLocal<>("Current aspect-driven transaction");
+
+    protected final Log logger = LogFactory.getLog(getClass());
 
     @Nullable
     private String transactionManagerBeanName;
@@ -104,7 +109,8 @@ public abstract class TransactionAspectSupport implements BeanFactoryAware, Init
 
     /**
      * General delegate for around-advice-based subclasses, delegating to several other template
-     * methods on this class.
+     * methods on this class. Able to handle {@link CallbackPreferringPlatformTransactionManager}
+     * as well as regular {@link PlatformTransactionManager} implementations
      * @param method
      * @param targetClass
      * @param invocation
@@ -202,18 +208,87 @@ public abstract class TransactionAspectSupport implements BeanFactoryAware, Init
         return null;
     }
 
-
+    /**
+     * Create a transaction if necessary based on the given TransactionAttribute
+     * Allows callers to perform custom TransactionAttribute lookups through
+     * thr TransactionAttributeSource
+     * @param tm
+     * @param txAttr
+     * @param joinpointIdentification the fully qualified method name(used for monitoring and logging purposes)
+     * @return
+     */
     protected TransactionInfo createTransactionIfNecessary(@Nullable PlatformTransactionManager tm,
                                                            @Nullable TransactionAttribute txAttr, final String joinpointIdentification)
     {
-        return null;
+        // If no name specified, apply method identification as transaction name
+        if(txAttr != null && txAttr.getName() == null)
+        {
+            txAttr = new DelegatingTransactionAttribute(txAttr)
+            {
+                @Override
+                public String getName() {
+                   return joinpointIdentification;
+                }
+            };
+        }
+
+        TransactionStatus status = null;
+        if(txAttr != null)
+        {
+            if(tm != null)
+            {
+                status = tm.getTransaction(txAttr);
+            }
+            else
+            {
+                if(logger.isDebugEnabled())
+                {
+                    logger.debug("Skipping transactional joinpoint [" + joinpointIdentification +
+                            "] because to transaction manager has been configured");
+                }
+            }
+        }
+        return prepareTransactionInfo(tm,txAttr,joinpointIdentification,status);
     }
 
+    /**
+     * Prepare a TransactionInfo for the given attribute and status object.
+     * @param tm
+     * @param txAttr
+     * @param joinpointIdentification
+     * @param status the TransactionStatus for the current transaction
+     * @return the prepared TransactionInfo object
+     */
     protected TransactionInfo prepareTransactionInfo(@Nullable PlatformTransactionManager tm,
                                                      @Nullable TransactionAttribute txAttr, String joinpointIdentification,
                                                      @Nullable TransactionStatus status)
     {
-        return null;
+        TransactionInfo txInfo = new TransactionInfo(tm, txAttr, joinpointIdentification);
+        if(txAttr != null)
+        {
+            // We need a transaction for this method
+            if(logger.isTraceEnabled())
+            {
+                logger.trace("Getting transaction for [" + txInfo.getJoinpointIdentification() + "]");
+            }
+            // The transaction manager will flag an error if an incompatible tx already exists
+            txInfo.newTransactionStatus(status);
+        }
+        else
+        {
+            // The TransactionInfo.hasTransaction() method will return false. We created it only
+            // to preserve the integrity of the ThreadLocal stack maintained in this class
+            if(logger.isTraceEnabled())
+            {
+                logger.trace("Don't need to create transaction for [ " + joinpointIdentification +
+                        "]: This method isn't transactional.");
+            }
+        }
+        // We always bind the TransactionInfo to the thread, even if we didn't create
+        // a new transaction here. This guarantees that the TransactionInfo stack
+        // will be managed correctly even if no transaction was created by this aspect
+        txInfo.bindToThread();
+        return txInfo;
     }
 
     protected void commitTransactionAfterReturning(@Nullable TransactionInfo txInfo)
@@ -243,9 +318,88 @@ public abstract class TransactionAspectSupport implements BeanFactoryAware, Init
      * Opaque object used to hold Transaction information. Subclasses
      * must pass it back to methods on this class, but not see its internals
      */
-    protected final class TransactionInfo{
+    protected final class TransactionInfo {
 
+        @Nullable
+        private final PlatformTransactionManager transactionManager;
+
+        @Nullable
+        private final TransactionAttribute transactionAttribute;
+
+        private final String joinpointIdentification;
+
+        @Nullable
+        private TransactionStatus transactionStatus;
+
+        @Nullable
+        private TransactionInfo oldTransactionInfo;
+
+        public TransactionInfo(@Nullable PlatformTransactionManager transactionManager,
+                               @Nullable TransactionAttribute transactionAttribute, String joinpointIdentification) {
+            this.transactionManager = transactionManager;
+            this.transactionAttribute = transactionAttribute;
+            this.joinpointIdentification = joinpointIdentification;
+        }
+
+        @Nullable
+        public PlatformTransactionManager getTransactionManager() {
+            Assert.state(this.transactionManager != null, "No PlatformTransactionManager set");
+            return this.transactionManager;
+        }
+
+        @Nullable
+        public TransactionAttribute getTransactionAttribute() {
+            return this.transactionAttribute;
+        }
+
+        /**
+         * Return a String representation of this joipoint (usually a Method call)
+         * for use in logging
+         *
+         * @return
+         */
+        public String getJoinpointIdentification() {
+            return this.joinpointIdentification;
+        }
+
+        public void newTransactionStatus(@Nullable TransactionStatus status) {
+            this.transactionStatus = status;
+        }
+
+        @Nullable
+        public TransactionStatus getTransactionStatus() {
+            return this.transactionStatus;
+        }
+
+        /**
+         * Return whether a transaction was created by the aspect,
+         * or whether we just have a placeholder to keep ThreadLocal stack integrity
+         *
+         * @return
+         */
+        public boolean hasTransaction() {
+            return (this.transactionStatus != null);
+        }
+
+        private void bindToThread() {
+            // Expose current TransactionStatus, preserving any existing TransactionStatus
+            // for restoration after this transaction is complete
+            this.oldTransactionInfo = transactionInfoHolder.get();
+            transactionInfoHolder.set(this);
+        }
+
+        private void restoreThreadLocalStatus() {
+            // Use stack to restore old transaction TransactionInfo
+            // Will be null if none was set
+            transactionInfoHolder.set(this.oldTransactionInfo);
+        }
+
+        @Override
+        public String toString() {
+            return (this.transactionAttribute != null ? this.transactionAttribute.toString() : "No transaction");
+        }
     }
+
 
     /**
      * Internal holder class for a Throwable, used as a return value
