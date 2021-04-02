@@ -4,6 +4,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.garry.transaction.PlatformTransactionManager;
 import org.garry.transaction.TransactionStatus;
+import org.garry.transaction.TransactionSystemException;
 import org.garry.transaction.support.CallbackPreferringPlatformTransactionManager;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
@@ -291,14 +292,79 @@ public abstract class TransactionAspectSupport implements BeanFactoryAware, Init
         return txInfo;
     }
 
+    /**
+     * Execute after successful completion of call, but not after an exception was handled
+     * Do nothing if we didn't create a transaction
+     * @param txInfo
+     */
     protected void commitTransactionAfterReturning(@Nullable TransactionInfo txInfo)
     {
-
+        if(txInfo !=null && txInfo.getTransactionStatus() != null)
+        {
+            if(logger.isTraceEnabled())
+            {
+                logger.trace("Completing transaction for ["+txInfo.getJoinpointIdentification() + "]");
+            }
+            txInfo.getTransactionManager().commit(txInfo.getTransactionStatus());
+        }
     }
 
+    /**
+     * Handle a throwable, completing the transaction
+     * We may commit or roll back, depending on the configuration
+     * @param txInfo
+     * @param ex
+     */
     protected void completeTransactionAfterThrowing(@Nullable TransactionInfo txInfo, Throwable ex)
     {
-
+        if(txInfo != null && txInfo.getTransactionStatus() !=null)
+        {
+            if(logger.isTraceEnabled())
+            {
+                logger.trace("Completing transaction for [" + txInfo.getJoinpointIdentification() +
+                        "] after exception: " + ex);
+            }
+            if(txInfo.transactionAttribute != null && txInfo.transactionAttribute.rollbackOn(ex))
+            {
+                try {
+                    txInfo.getTransactionManager().rollback(txInfo.getTransactionStatus());
+                }
+                catch (TransactionSystemException ex2) {
+                    logger.error("Application exception overridden by rollback exception", ex);
+                    ex2.initApplicationException(ex);
+                    throw ex2;
+                }
+                catch (RuntimeException ex2) {
+                    logger.error("Application exception overridden by rollback exception", ex);
+                    throw ex2;
+                }
+                catch (Error err) {
+                    logger.error("Application exception overridden by rollback error", ex);
+                    throw err;
+                }
+            }
+            else
+            {
+                // We don't roll back on this exception.
+                // Will still roll back if TransactionStatus.isRollbackOnly() is true.
+                try {
+                    txInfo.getTransactionManager().commit(txInfo.getTransactionStatus());
+                }
+                catch (TransactionSystemException ex2) {
+                    logger.error("Application exception overridden by commit exception", ex);
+                    ex2.initApplicationException(ex);
+                    throw ex2;
+                }
+                catch (RuntimeException ex2) {
+                    logger.error("Application exception overridden by commit exception", ex);
+                    throw ex2;
+                }
+                catch (Error err) {
+                    logger.error("Application exception overridden by commit error", ex);
+                    throw err;
+                }
+            }
+        }
     }
 
     protected void cleanupTransactionInfo(@Nullable TransactionInfo txInfo)
