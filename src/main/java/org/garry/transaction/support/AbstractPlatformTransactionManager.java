@@ -165,7 +165,7 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
 
     /**
      * Actually invoke the {@code afterCompletion} methods of the
-     * given Spring TransactionSynchroinzation objects.
+     * given Spring TransactionSynchronization objects.
      * @param synchronizations
      * @param completionStatus
      */
@@ -173,6 +173,152 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
     {
 
     }
+
+    // Template methods to be implemented in subclass
+
+    /**
+     * Return a transaction object for the current transaction state.
+     * The returned object will usually be specific to the concrete transaction
+     * manager implementation, carrying corresponding transaction state in a
+     * modifiable fashion.This object will be passed into the other template
+     * methods,either directly or as part of a
+     * DefaultTransactionStatus instance.
+     * The returned object should contain information about any existing
+     * transaction, that is, a transaction that has already started before the
+     * current {@code getTransaction} call on the transaction manager.
+     * Consequently, a {@code doGetTransaction} implementation will usually
+     * look for an existing transaction and store corresponding state in the
+     * returned transaction object.
+     * @return
+     * @throws TransactionException
+     */
+    protected abstract Object doGetTransaction() throws TransactionException;
+
+    /**
+     * Check if the given transaction object indicates an existing transaction
+     * (that is, a transaction which has already started)
+     * The result will evaluated according to the specified propagation
+     * behavior for the new transaction. An existing transaction might get
+     * suspended (in case of PROPAGATION_REQUIRES_NEW),or the new transaction
+     * might participate in the existing one (in case of PROPAGATION_REQUIRED).
+     * The default implementation returns {@code false},assuming that
+     * participating in existing transactions is generally not support.
+     * @param transaction
+     * @return
+     * @throws TransactionException
+     */
+    protected boolean isExistingTransaction(Object transaction) throws TransactionException
+    {
+        return false;
+    }
+
+    /**
+     * Return whether to use a savepoint for a nested transaction
+     */
+    protected boolean useSavepointForNestedTransaction()
+    {
+        return true;
+    }
+
+    /**
+     * Suspend the resource of the current transaction.
+     * Transaction synchronization will already haven been suspended.
+     * @param transaction
+     * @return
+     * @throws TransactionException
+     */
+    protected Object doSuspend(Object transaction)throws TransactionException
+    {
+        return null;
+    }
+
+    /**
+     * Resume the resources of the current transaction.
+     * Transaction synchronization will be resumed afterwards.
+     * @param transaction
+     * @param suspendedResources
+     * @throws TransactionException
+     */
+    protected void doResume(@Nullable Object transaction, Object suspendedResources) throws TransactionException
+    {
+
+    }
+
+    /**
+     * Return whether to call {@code doCommit} on a transaction that has been
+     * marked as rollback-only in a global fashion.
+     * @return
+     */
+    protected boolean shouldCommitOnGlobalRollbackOnly()
+    {
+        return false;
+    }
+
+    /**
+     * Make preparations for commit, to be performed before the
+     * {@code beforeCommit} synchronization callbacks occur.
+     * @param status
+     */
+    protected void prepareForCommit(DefaultTransactionStatus status)
+    {
+
+    }
+
+    /**
+     * Perform an actual commit of the given transaction
+     * @param status
+     * @throws TransactionException
+     */
+    protected abstract void doCommit(DefaultTransactionStatus status) throws TransactionException;
+
+    /**
+     * Perform an actual rollback of the given transaction
+     * @param status
+     * @throws TransactionException
+     */
+    protected abstract void doRollback(DefaultTransactionStatus status) throws TransactionException;
+
+    /**
+     * Set the given transaction rollback-only. Only called on rollback
+     * if the current transaction participated in an existing one.
+     * @param status
+     * @throws TransactionException
+     */
+    protected void doSetRollbackOnly(DefaultTransactionStatus status) throws TransactionException
+    {
+
+    }
+
+    /**
+     * Register the given list of transaction synchronizations with the existing transaction.
+     * @param transaction
+     * @param synchronizations
+     * @throws TransactionException
+     */
+    protected void registerAfterCompletionWithExistingTransaction(Object transaction, List<TransactionSynchronization> synchronizations)
+        throws TransactionException
+    {
+
+    }
+
+    /**
+     * Cleanup resources after transaction completion.
+     * @param transaction
+     */
+    protected void doCleanupAfterCompletion(Object transaction)
+    {
+
+    }
+
+    /**
+     * Begin a new transaction with semantics according to the given transaction
+     * definition. Does not have to care about applying the propagation behavior,
+     * as this has already been handled by this abstract manager.
+     * @param transaction
+     * @param definition
+     * @throws TransactionException
+     */
+    protected abstract void doBegin(Object transaction, TransactionDefinition definition)throws TransactionException;
 
     protected static class SuspendedResourcesHolder
     {
