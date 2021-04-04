@@ -1,9 +1,8 @@
 package org.garry.transaction.support;
 
-import org.garry.transaction.PlatformTransactionManager;
-import org.garry.transaction.TransactionDefinition;
-import org.garry.transaction.TransactionException;
-import org.garry.transaction.TransactionStatus;
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.garry.transaction.*;
 import org.springframework.core.Constants;
 import org.springframework.lang.Nullable;
 
@@ -53,17 +52,123 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
 
     public static final int SYNCHRONIZATION_NEVER = 2;
 
+    protected transient Log logger = LogFactory.getLog(getClass());
+
     private int transactionSynchronization = SYNCHRONIZATION_ALWAYS;
 
     private int defaultTimeout = TransactionDefinition.TIMEOUT_DEFAULT;
 
+    /**
+     * Return if this transaction manager should active the thread-bound
+     * transaction synchronization support
+     * @return
+     */
+    public int getTransactionSynchronization() {
+        return transactionSynchronization;
+    }
+
+    /**
+     * Set when this transaction manager should active the thread-bound
+     * transaction synchronization support.Default is "always".
+     * Note that transaction synchronization isn't supported for
+     * multiple concurrent transactions by different transaction managers.
+     * Only one transaction manager is allowed to active it at any time.
+     * @param transactionSynchronization
+     */
+    public void setTransactionSynchronization(int transactionSynchronization) {
+        this.transactionSynchronization = transactionSynchronization;
+    }
 
     // Implementation of PlatformTransactionManager
 
-
+    /**
+     * This implementation handles propagation behavior. Delegates to
+     * {@code doGetTransaction}, {@code isExistingTransaction}
+     * @param definition
+     * @return
+     * @throws TransactionException
+     */
     @Override
     public TransactionStatus getTransaction(TransactionDefinition definition) throws TransactionException {
-        return null;
+        Object transaction = doGetTransaction();
+
+        // Cache debug flag to avoid repeated checks
+        boolean debugEnabled = logger.isDebugEnabled();
+
+        if(definition == null)
+        {
+            // Use defaults if no transaction definition given
+            definition = new DefaultTransactionDefinition();
+        }
+
+        if(isExistingTransaction(transaction))
+        {
+            // Existing transaction found -> check propagation behavior to find out how to behave
+            return handleExistingTransaction(definition,transaction,debugEnabled);
+        }
+
+        // Check definition settings for new transaction
+        if(definition.getTimeout() < TransactionDefinition.TIMEOUT_DEFAULT)
+        {
+            throw new InvalidTimeoutException("Invalid transaction timeout",definition.getTimeout());
+        }
+
+        // No existing transaction found -> check propagation behavior to find out how to proceed
+        if(definition.getPropagationBehavior() == TransactionDefinition.PROPAGATION_MANDATORY)
+        {
+            throw new IllegalTransactionStateException(
+                    "No existing transaction found for transaction marked with propagation 'mandatory'");
+        }
+        else if(definition.getPropagationBehavior() == TransactionDefinition.PROPAGATION_REQUIRED ||
+                definition.getPropagationBehavior() == TransactionDefinition.PROPAGATION_REQUIRES_NEW ||
+                definition.getPropagationBehavior() == TransactionDefinition.PROPAGATION_NESTED)
+        {
+            SuspendedResourcesHolder suspnededResources = suspend(null);
+            if(debugEnabled)
+            {
+                logger.debug("Creating new transaction with name [" + definition.getName() + "]: " + definition);
+            }
+            try
+            {
+                boolean newSynchronization = (getTransactionSynchronization() != SYNCHRONIZATION_NEVER);
+                DefaultTransactionStatus status = newTransactionStatus(
+                        definition,transaction,true,newSynchronization,debugEnabled,suspnededResources);
+                doBegin(transaction,definition);
+                prepareSynchronization(status,definition);
+                return status;
+            }
+            catch (RuntimeException | Error ex)
+            {
+                resume(null,suspnededResources);
+                throw ex;
+            }
+        }
+        else
+        {
+            // Create "empty" transaction: no actual transaction, but potentially synchronization
+            if(definition.getIsolationLevel() != TransactionDefinition.ISOLATION_DEFAULT && logger.isWarnEnabled())
+            {
+                logger.warn("Custom isolation level specified but no actual transaction initiated: " +
+                        "isolation level will effectively be ignored: " + definition);
+            }
+            boolean newSynchronization = (getTransactionSynchronization() == SYNCHRONIZATION_ALWAYS);
+            return prepareTransactionStatus(definition,null,true,newSynchronization,debugEnabled,null);
+        }
+
+    }
+
+    /**
+     * Create a TransactionStatus for an existing transaction
+     * @param definition
+     * @param transaction
+     * @param debugEnabled
+     * @return
+     * @throws TransactionException
+     */
+    private TransactionStatus handleExistingTransaction(
+            TransactionDefinition definition, Object transaction, boolean debugEnabled) throws TransactionException
+    {
+       return null;
     }
 
     /**
