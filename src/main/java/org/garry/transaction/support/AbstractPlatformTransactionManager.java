@@ -58,6 +58,10 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
 
     private int defaultTimeout = TransactionDefinition.TIMEOUT_DEFAULT;
 
+    private boolean validateExistingTransaction = false;
+
+    private boolean nestedTransactionAllowed = false;
+
     /**
      * Return if this transaction manager should active the thread-bound
      * transaction synchronization support
@@ -77,6 +81,52 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
      */
     public void setTransactionSynchronization(int transactionSynchronization) {
         this.transactionSynchronization = transactionSynchronization;
+    }
+
+    /**
+     * Return whether existing transactions should be validated before participating
+     * in them
+     * @return
+     */
+    public boolean isValidateExistingTransaction() {
+        return this.validateExistingTransaction;
+    }
+
+    /**
+     * Set whether existing transactions should be validated before participating
+     * int them
+     * when participating in an existing transaction (e.g. with
+     * PROPAGATION_REQUIRES or PROPAGATION_SUPPORTS encountering an existing
+     * transaction), this outer transaction's characteristics will apply even
+     * to the inner transaction scope.Validation will detect incompatible
+     * isolation level and read-only settings on the inner transaction definition
+     * and reject participation accordingly through throwing a corresponding exception.
+     * Default is "false", leniently ignoring inner transaction settings,
+     * simply overriding then with the outer transaction's characteristics.
+     * Switch this flag to "true" in order to enforce strict validation
+     *
+     * @param validateExistingTransaction
+     */
+    public void setValidateExistingTransaction(boolean validateExistingTransaction) {
+        this.validateExistingTransaction = validateExistingTransaction;
+    }
+
+    /**
+     * Return whether nested transactions are allowed
+     * @return
+     */
+    public boolean isNestedTransactionAllowed() {
+        return nestedTransactionAllowed;
+    }
+
+    /**
+     * Set whether nested transactions are allowed.Default is "false".
+     * Typically initialized with an appropriate default by the
+     * concrete transaction manager subclass
+     * @param nestedTransactionAllowed
+     */
+    public void setNestedTransactionAllowed(boolean nestedTransactionAllowed) {
+        this.nestedTransactionAllowed = nestedTransactionAllowed;
     }
 
     // Implementation of PlatformTransactionManager
@@ -298,7 +348,10 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
             TransactionDefinition definition, @Nullable Object transaction, boolean newTransaction,
             boolean newSynchronization, boolean debug, @Nullable Object suspendedResources)
     {
-        return null;
+        DefaultTransactionStatus status = newTransactionStatus(
+                definition, transaction, newTransaction, newSynchronization, debug, suspendedResources);
+        prepareSynchronization(status,definition);
+        return status;
     }
 
     /**
@@ -315,7 +368,11 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
             TransactionDefinition definition, @Nullable Object transaction, boolean newTransaction,
             boolean newSynchronization, boolean debug, @Nullable Object suspendedResources)
     {
-       return null;
+        boolean actualNewSynchronization = newSynchronization &&
+                !TransactionSynchronizationManager.isSynchronizationActive();
+       return new DefaultTransactionStatus(
+               transaction,newTransaction,actualNewSynchronization,
+               definition.isReadOnly(),debug,suspendedResources);
     }
 
     /**
@@ -323,7 +380,16 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
      */
     protected void prepareSynchronization(DefaultTransactionStatus status, TransactionDefinition definition)
     {
-
+        if(status.isNewSynchronization())
+        {
+            TransactionSynchronizationManager.setActualTransactionActive(status.hasTransaction());
+            TransactionSynchronizationManager.setCurrentTransactionIsolationLevel(
+                    definition.getIsolationLevel() != TransactionDefinition.ISOLATION_DEFAULT ?
+                            definition.getIsolationLevel() : null);
+            TransactionSynchronizationManager.setCurrentTransactionReadOnly(definition.isReadOnly());
+            TransactionSynchronizationManager.setCurrentTransactionName(definition.getName());
+            TransactionSynchronizationManager.initSynchronization();
+        }
     }
 
     /**
@@ -335,7 +401,11 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
      */
     protected int determineTimeout(TransactionDefinition definition)
     {
-        return 0;
+        if(definition.getTimeout() != TransactionDefinition.TIMEOUT_DEFAULT)
+        {
+            return definition.getTimeout();
+        }
+        return this.defaultTimeout;
     }
 
     /**
@@ -346,7 +416,45 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
      */
     protected final SuspendedResourcesHolder suspend(@Nullable Object transaction)
     {
-        return null;
+        if(TransactionSynchronizationManager.isSynchronizationActive())
+        {
+            List<TransactionSynchronization> suspendedSynchronizations = doSuspendSynchroinzation();
+            try
+            {
+                Object suspendedResources = null;
+                if(transaction != null)
+                {
+                    suspendedResources = doSuspend(transaction);
+                }
+                String name = TransactionSynchronizationManager.getCurrentTransactionName();
+                TransactionSynchronizationManager.setCurrentTransactionName(null);
+                boolean readOnly = TransactionSynchronizationManager.isCurrentTransactionReadOnly();
+                TransactionSynchronizationManager.setCurrentTransactionReadOnly(false);
+                Integer isolationLevel = TransactionSynchronizationManager.getCurrentTransactionIsolationLevel();
+                TransactionSynchronizationManager.setCurrentTransactionIsolationLevel(null);
+                boolean wasActive = TransactionSynchronizationManager.isActualTransactionActive();
+                TransactionSynchronizationManager.setActualTransactionActive(false);
+                return new SuspendedResourcesHolder(
+                        suspendedResources,suspendedSynchronizations,name,readOnly,isolationLevel,wasActive);
+            }
+            catch (RuntimeException | Error ex)
+            {
+                // doSuspend failed - original transaction is still active
+                doResumeSynchronization(suspendedSynchronizations);
+                throw  ex;
+            }
+        }
+        else if(transaction != null)
+        {
+            // Transaction active but to synchronization active
+            Object suspendedResources = doSuspend(transaction);
+            return new SuspendedResourcesHolder(suspendedResources);
+        }
+        else
+        {
+            // Neither transaction nor synchronization active
+            return null;
+        }
     }
 
     /**
@@ -357,7 +465,23 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
      */
     protected final void resume(@Nullable Object transaction, @Nullable SuspendedResourcesHolder resourcesHolder)
     {
-
+        if(resourcesHolder != null)
+        {
+            Object suspendedResources = resourcesHolder.suspendedResources;
+            if(suspendedResources != null)
+            {
+                doResume(transaction,suspendedResources);
+            }
+            List<TransactionSynchronization> suspendedSynchronizations = resourcesHolder.suspendedSynchronizations;
+            if (suspendedSynchronizations != null)
+            {
+                TransactionSynchronizationManager.setActualTransactionActive(resourcesHolder.wasActive);
+                TransactionSynchronizationManager.setCurrentTransactionIsolationLevel(resourcesHolder.isolationLevel);
+                TransactionSynchronizationManager.setCurrentTransactionReadOnly(resourcesHolder.readOnly);
+                TransactionSynchronizationManager.setCurrentTransactionName(resourcesHolder.name);
+                doResumeSynchronization(suspendedSynchronizations);
+            }
+        }
     }
 
     @Override

@@ -1,10 +1,50 @@
 package org.garry.transaction.support;
 
+import org.springframework.lang.Nullable;
+
 /**
  * Default implementation of the {@link org.garry.transaction.TransactionStatus}
  * interface, used by
  */
 public class DefaultTransactionStatus extends AbstractTransactionStatus{
+
+    @Nullable
+    private final Object transaction;
+
+    private final boolean newTransaction;
+
+    private final boolean newSynchronization;
+
+    private final boolean readOnly;
+
+    private final boolean debug;
+
+    @Nullable
+    private final Object suspendedResources;
+
+    public DefaultTransactionStatus(
+            @Nullable Object transaction, boolean newTransaction, boolean newSynchronization,
+            boolean readOnly, boolean debug, @Nullable Object suspendedResources) {
+        this.transaction = transaction;
+        this.newTransaction = newTransaction;
+        this.newSynchronization = newSynchronization;
+        this.readOnly = readOnly;
+        this.debug = debug;
+        this.suspendedResources = suspendedResources;
+    }
+
+    /**
+     * Return whether there is an actual transaction active
+     * @return
+     */
+    public boolean hasTransaction()
+    {
+        return (this.transaction != null);
+    }
+
+    public boolean isNewSynchronization() {
+        return this.newSynchronization;
+    }
 
     @Override
     public boolean isNewTransaction() {
