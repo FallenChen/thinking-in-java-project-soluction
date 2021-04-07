@@ -51,4 +51,17 @@ public class DefaultTransactionStatus extends AbstractTransactionStatus{
         return false;
     }
 
+    public boolean isReadOnly() {
+        return this.readOnly;
+    }
+
+    /**
+     * Return whether the progress of this transaction is debugged.This is used
+     * by AbstractPlatformTransactionManager as an optimization, to prevent repeated
+     * calls to logger.isDebug().Not really intended for client code
+     * @return
+     */
+    public boolean isDebug() {
+        return this.debug;
+    }
 }
