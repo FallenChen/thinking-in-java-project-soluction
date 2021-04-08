@@ -1,6 +1,7 @@
 package org.garry.transaction.support;
 
 import org.springframework.lang.Nullable;
+import org.springframework.util.Assert;
 
 /**
  * Default implementation of the {@link org.garry.transaction.TransactionStatus}
@@ -31,6 +32,16 @@ public class DefaultTransactionStatus extends AbstractTransactionStatus{
         this.readOnly = readOnly;
         this.debug = debug;
         this.suspendedResources = suspendedResources;
+    }
+
+    /**
+     * Return the underlying transactino object
+     * @return
+     */
+    @Nullable
+    public Object getTransaction() {
+        Assert.state(this.transaction != null, "No transaction active");
+        return this.transaction;
     }
 
     /**

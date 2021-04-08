@@ -4,8 +4,11 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.springframework.aop.scope.ScopedObject;
 import org.springframework.core.InfrastructureProxy;
+import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
+
+import java.util.List;
 
 /**
  * Utility methods for triggering specific {@link TransactionSynchronization}
@@ -55,9 +58,61 @@ public abstract class TransactionSynchronizationUtils {
 
     public static void triggerFlush()
     {
-//        for(TransactionSynchronization synchronization: TransactionSynchronizationManager.)
     }
 
+    /**
+     * Trigger {@code beforeCommit} callbacks on all currently registered synchronizations.
+     *
+     * @param readOnly
+     */
+    public static void triggerBeforeCommit(boolean readOnly)
+    {
+
+    }
+
+    public static void triggerBeforeCompletion()
+    {
+
+    }
+
+    public static void triggerAfterCommit()
+    {
+
+    }
+
+    /**
+     * Actually invoke the {@code afterCommit} methods of the
+     * given Spring TransactionSynchronization objects
+     * @param synchronizations
+     */
+    public static void invokeAfterCommit(@Nullable List<TransactionSynchronization> synchronizations)
+    {
+
+    }
+
+    /**
+     * Trigger {@code afterCompletion} callbacks on all currently registered synchronizations
+     * @param completionStatus
+     */
+    public static void triggerAfterCompletion(int completionStatus)
+    {
+
+    }
+
+    /**
+     * Actually invoke the {@code afterCompletion} methods of the
+     * given Spring TransactionSynchronization objects
+     * @param synchronizations
+     * @param completionStatus
+     */
+    public static void invokeAfterCompletion(@Nullable List<TransactionSynchronization> synchronizations,
+                                             int completionStatus)
+    {
+       if(synchronizations != null)
+       {
+
+       }
+    }
 
     /**
      * todo ???

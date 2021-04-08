@@ -502,39 +502,286 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
         }
         DefaultTransactionStatus defStatus = (DefaultTransactionStatus) status;
         if (defStatus.isLocalRollbackOnly()) {
-            if(defStatus.isDebug())
-            {
+            if (defStatus.isDebug()) {
                 logger.debug("Transactional code has requested rollback");
             }
-            processRollback(defStatus,false);
+            processRollback(defStatus, false);
             return;
         }
-        if(!shouldCommitOnGlobalRollbackOnly() && defStatus.isGlobalRollbackOnly())
-        {
-            if(defStatus.isDebug())
-            {
+        if (!shouldCommitOnGlobalRollbackOnly() && defStatus.isGlobalRollbackOnly()) {
+            if (defStatus.isDebug()) {
                 logger.debug("Global transaction is marked as rollback-only but transactional code requested commit");
             }
-            processRollback(defStatus,true);
+            processRollback(defStatus, true);
             return;
         }
         processCommit(defStatus);
     }
 
 
+    /**
+     * Process an actual commit
+     * Rollback-only flags have already been checked and applied
+     *
+     * @param status
+     */
+    private void processCommit(DefaultTransactionStatus status) {
+        try {
+            boolean beforeCompletionInvoked = false;
 
+            try {
+                boolean unexpectedRollback = false;
+                prepareForCommit(status);
+                triggerBeforeCommit(status);
+                triggerBeforeCompletion(status);
+                beforeCompletionInvoked = true;
+
+                if (status.hasSavepoint()) {
+                    if (status.isDebug()) {
+                        logger.debug("Releasing transaction savepoint");
+                    }
+                    unexpectedRollback = status.isGlobalRollbackOnly();
+                    status.releaseHeldSavepoint();
+                } else if (status.isNewTransaction()) {
+                    if (status.isDebug()) {
+                        logger.debug("Initiating transaction commit");
+                    }
+                    unexpectedRollback = status.isGlobalRollbackOnly();
+                    doCommit(status);
+                } else if (isFailEarlyOnGlobalRollbackOnly()) {
+                    unexpectedRollback = status.isGlobalRollbackOnly();
+                }
+
+                // Throw UnexpectedRollbackException if we have a global rollback-only
+                // marker but still didn't get a corresponding exception from commit
+                if (unexpectedRollback) {
+                    throw new UnexpectedRollbackException(
+                            "Transaction silently rolled back because it has been marked as rollback-only");
+                }
+            } catch (UnexpectedRollbackException ex) {
+                // can only be caused by doCommit
+                triggerAfterCompletion(status, TransactionSynchronization.STATUS_ROLLED_BACK);
+                throw ex;
+            } catch (TransactionException ex) {
+                // can only be caused by doCommit
+                if (isRollbackOnCommitFailure()) {
+                    doRollbackOnCommitException(status, ex);
+                } else {
+                    triggerAfterCompletion(status, TransactionSynchronization.STATUS_UNKNOWN);
+                }
+                throw ex;
+            } catch (RuntimeException | Error ex) {
+                if (!beforeCompletionInvoked) {
+                    triggerBeforeCommit(status);
+                }
+                doRollbackOnCommitException(status, ex);
+                throw ex;
+            }
+
+            // Trigger afterCommit callbacks,with an exception thrown there
+            // propagated to callers but the transaction still considered as committed
+            try {
+                triggerAfterCommit(status);
+            } finally {
+                triggerAfterCompletion(status, TransactionSynchronization.STATUS_COMMITTED);
+            }
+        } finally {
+            cleanupAfterCompletion(status);
+        }
+    }
+
+    /**
+     * This implementation of rollback handles participating in existing
+     * transactions.Delegates to {@code doRollback} and {@code doSetRollbackOnly}
+     *
+     * @param status
+     * @throws TransactionException
+     */
     @Override
     public void rollback(TransactionStatus status) throws TransactionException {
-
+        if (status.isCompleted()) {
+            throw new IllegalTransactionStateException(
+                    "Transaction is already completed - do not call commit or rollback more than once per transaction"
+            );
+        }
+        DefaultTransactionStatus defStatus = (DefaultTransactionStatus) status;
+        processRollback(defStatus, false);
     }
 
+    /**
+     * Process an actual rollback.
+     * The completed flag has already been checked
+     *
+     * @param status
+     * @param unexpected
+     */
+    private void processRollback(DefaultTransactionStatus status, boolean unexpected) {
+        try {
+            boolean unexpectedRollback = unexpected;
+
+            try {
+                triggerBeforeCompletion(status);
+
+                if (status.hasSavepoint()) {
+                    if (status.isDebug()) {
+                        logger.debug("Rolling back transaction to savepoint");
+                    }
+                    status.rollbackToHeldSavepoint();
+                }
+                else if (status.isNewTransaction()) {
+                    if (status.isDebug()) {
+                        logger.debug("Initiating transaction rollback");
+                    }
+                    doRollback(status);
+                }
+                else {
+                    // Participating in larger transaction
+                    if (status.hasTransaction()) {
+                        if (status.isLocalRollbackOnly() || isGlobalRollbackOnParticipationFailure()) {
+                            if (status.isDebug()) {
+                                logger.debug("Participating transaction failed - marking existing transaction as rollback-only");
+                            }
+                            doSetRollbackOnly(status);
+                        }
+                        else {
+                            if (status.isDebug()) {
+                                logger.debug("Participating transaction failed - letting transaction originator decide on rollback");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        logger.debug("Should roll back transaction but cannot - no transaction available");
+                    }
+                    // Unexpected rollback only matters here if we're asked to fail early
+                    if(!isFailEarlyOnGlobalRollbackOnly())
+                    {
+                        unexpectedRollback = false;
+                    }
+                }
+            }
+            catch (RuntimeException | Error ex)
+            {
+                triggerAfterCompletion(status,TransactionSynchronization.STATUS_UNKNOWN);
+                throw ex;
+            }
+            triggerAfterCompletion(status,TransactionSynchronization.STATUS_ROLLED_BACK);
+
+            // Raise UnexpectedRollbackException if we had a global rollback-only marker
+            if(unexpectedRollback)
+            {
+                throw new UnexpectedRollbackException(
+                        "Transaction rolled back because it has been marked as rollback-only"
+                );
+            }
+        }
+        finally {
+            cleanupAfterCompletion(status);
+        }
+    }
+
+    /**
+     * Invoke {@code doRollback},handling rollback exceptions p
+     * @param status
+     * @param ex
+     */
+    private void doRollbackOnCommitException(DefaultTransactionStatus status, Throwable ex)
+    {
+        try {
+            if (status.isNewTransaction())
+            {
+                if(status.isDebug())
+                {
+                    logger.debug("Initiating transaction rollback after commit exception",ex);
+                }
+                doRollback(status);
+            }
+            else if(status.hasTransaction() && isGlobalRollbackOnParticipationFailure())
+            {
+                if(status.isDebug())
+                {
+                    logger.debug("Marking existing transaction as rollback-only after commit exception",ex);
+                }
+                doSetRollbackOnly(status);
+            }
+        }
+        catch (RuntimeException | Error rbex)
+        {
+            logger.error("Commit exception overridden by rollback exception",ex);
+            triggerAfterCompletion(status,TransactionSynchronization.STATUS_UNKNOWN);
+            throw rbex;
+        }
+        triggerAfterCompletion(status,TransactionSynchronization.STATUS_ROLLED_BACK);
+    }
+
+    /**
+     * Trigger {@code beforeCommit} callbacks
+     * @param status
+     */
     protected final void triggerBeforeCommit(DefaultTransactionStatus status) {
-
+        if(status.isNewSynchronization())
+        {
+            if(status.isDebug())
+            {
+                logger.trace("Triggering beforeCommit synchronization");
+            }
+            TransactionSynchronizationUtils.triggerBeforeCommit(status.isReadOnly());
+        }
     }
 
+    /**
+     * Trigger {@code beforeCompletion} callbacks
+     * @param status
+     */
     protected final void triggerBeforeCompletion(DefaultTransactionStatus status) {
-
+        if(status.isNewSynchronization())
+        {
+            if(status.isDebug())
+            {
+                logger.trace("Triggering beforeCompletion synchronization");
+            }
+            TransactionSynchronizationUtils.triggerBeforeCompletion();
+        }
     }
+
+    private void triggerAfterCommit(DefaultTransactionStatus status)
+    {
+        if(status.isNewSynchronization())
+        {
+            if (status.isDebug())
+            {
+                logger.trace("Triggering afterCommit synchronization");
+            }
+            TransactionSynchronizationUtils.triggerAfterCommit();
+        }
+    }
+
+    private void triggerAfterCompletion(DefaultTransactionStatus status, int completionStatus)
+    {
+       if(status.isNewSynchronization())
+       {
+           List<TransactionSynchronization> synchronizations = TransactionSynchronizationManager.getSynchronizations();
+           TransactionSynchronizationManager.clearSynchronization();
+           if(!status.hasTransaction() || status.isNewTransaction())
+           {
+               if(status.isDebug())
+               {
+                   logger.trace("Triggering afterCompletion synchronization");
+               }
+               // No transaction or new transaction for the current scope ->
+               // invoke the afterCompletion callbacks immediately
+               invokeAfterCompletion(synchronizations,completionStatus);
+           }
+           else if(!synchronizations.isEmpty())
+           {
+               // Existing transaction that we participate in, controlled outside
+               // of the scope of this Spring transaction manager -> try to register
+               // an afterCompletion callback with the existing (JTA) transaction
+               registerAfterCompletionWithExistingTransaction(status.getTransaction(),synchronizations);
+           }
+       }
+    }
+
 
     /**
      * Actually invoke the {@code afterCompletion} methods of the
@@ -544,7 +791,7 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
      * @param completionStatus
      */
     protected final void invokeAfterCompletion(List<TransactionSynchronization> synchronizations, int completionStatus) {
-
+        TransactionSynchronizationUtils.invokeAfterCompletion(synchronizations,completionStatus);
     }
 
     // Template methods to be implemented in subclass
@@ -696,36 +943,36 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
      */
     protected abstract void doBegin(Object transaction, TransactionDefinition definition) throws TransactionException;
 
-protected static class SuspendedResourcesHolder {
-    @Nullable
-    private final Object suspendedResources;
+    protected static class SuspendedResourcesHolder {
+        @Nullable
+        private final Object suspendedResources;
 
-    @Nullable
-    private List<TransactionSynchronization> suspendedSynchronizations;
+        @Nullable
+        private List<TransactionSynchronization> suspendedSynchronizations;
 
-    @Nullable
-    private String name;
+        @Nullable
+        private String name;
 
-    private boolean readOnly;
+        private boolean readOnly;
 
-    @Nullable
-    private Integer isolationLevel;
+        @Nullable
+        private Integer isolationLevel;
 
-    private boolean wasActive;
+        private boolean wasActive;
 
-    private SuspendedResourcesHolder(Object suspendedResources) {
-        this.suspendedResources = suspendedResources;
+        private SuspendedResourcesHolder(Object suspendedResources) {
+            this.suspendedResources = suspendedResources;
+        }
+
+        private SuspendedResourcesHolder(
+                @Nullable Object suspendedResources, List<TransactionSynchronization> suspendedSynchronizations,
+                @Nullable String name, boolean readOnly, @Nullable Integer isolationLevel, boolean wasActive) {
+            this.suspendedResources = suspendedResources;
+            this.suspendedSynchronizations = suspendedSynchronizations;
+            this.name = name;
+            this.readOnly = readOnly;
+            this.isolationLevel = isolationLevel;
+            this.wasActive = wasActive;
+        }
     }
-
-    private SuspendedResourcesHolder(
-            @Nullable Object suspendedResources, List<TransactionSynchronization> suspendedSynchronizations,
-            @Nullable String name, boolean readOnly, @Nullable Integer isolationLevel, boolean wasActive) {
-        this.suspendedResources = suspendedResources;
-        this.suspendedSynchronizations = suspendedSynchronizations;
-        this.name = name;
-        this.readOnly = readOnly;
-        this.isolationLevel = isolationLevel;
-        this.wasActive = wasActive;
-    }
-}
 }
