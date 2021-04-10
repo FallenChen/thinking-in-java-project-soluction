@@ -52,15 +52,26 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
 
     public static final int SYNCHRONIZATION_NEVER = 2;
 
+    /**
+     * Constants instance for AbstractPlatformTransactionManager
+     */
+    private static final Constants constants = new Constants(AbstractPlatformTransactionManager.class);
+
     protected transient Log logger = LogFactory.getLog(getClass());
 
     private int transactionSynchronization = SYNCHRONIZATION_ALWAYS;
 
     private int defaultTimeout = TransactionDefinition.TIMEOUT_DEFAULT;
 
+    private boolean nestedTransactionAllowed = false;
+
     private boolean validateExistingTransaction = false;
 
-    private boolean nestedTransactionAllowed = false;
+    private boolean globalRollbackOnParticipationFailure = true;
+
+    private boolean failEarlyOnGlobalRollbackOnly = false;
+
+    private boolean rollbackOnCommitFailure = false;
 
     /**
      * Return if this transaction manager should active the thread-bound
@@ -84,6 +95,37 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
     public void setTransactionSynchronization(int transactionSynchronization) {
         this.transactionSynchronization = transactionSynchronization;
     }
+
+    /**
+     * Set the transaction synchronization by the name of the corresponding constant
+     * in this class, e.g. "SYNCHRONIZATION_ALWAYS"
+     * @param constantName
+     */
+    public final void setTransactionSynchronizationName(String constantName)
+    {
+       setTransactionSynchronization(constants.asNumber(constantName).intValue());
+    }
+
+    /**
+     * Specify the default timeout that this transaction manager should apply
+     * if there is no timeout specified at the transaction level, in seconds.
+     *
+     * @param defaultTimeout
+     */
+    public final void setDefaultTimeout(int defaultTimeout)
+    {
+      if(defaultTimeout < TransactionDefinition.TIMEOUT_DEFAULT)
+      {
+          throw new InvalidTimeoutException("Invalid default timeout",defaultTimeout);
+      }
+      this.defaultTimeout = defaultTimeout;
+    }
+
+
+    public int getDefaultTimeout() {
+        return this.defaultTimeout;
+    }
+
 
     /**
      * Return whether existing transactions should be validated before participating
@@ -132,6 +174,46 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
      */
     public void setNestedTransactionAllowed(boolean nestedTransactionAllowed) {
         this.nestedTransactionAllowed = nestedTransactionAllowed;
+    }
+
+    /**
+     * Set whether to globally mark on existing transaction as rollback-only
+     * after a participating transaction failed.// todo
+     * @param globalRollbackOnParticipationFailure
+     */
+    public void setGlobalRollbackOnParticipationFailure(boolean globalRollbackOnParticipationFailure) {
+        this.globalRollbackOnParticipationFailure = globalRollbackOnParticipationFailure;
+    }
+
+    public boolean isGlobalRollbackOnParticipationFailure() {
+        return this.globalRollbackOnParticipationFailure;
+    }
+
+    /**
+     * Set whether to fail early in case of the transaction being globally marked
+     * as rollback-only //todo
+     * @param failEarlyOnGlobalRollbackOnly
+     */
+    public void setFailEarlyOnGlobalRollbackOnly(boolean failEarlyOnGlobalRollbackOnly) {
+        this.failEarlyOnGlobalRollbackOnly = failEarlyOnGlobalRollbackOnly;
+    }
+
+    public boolean isFailEarlyOnGlobalRollbackOnly() {
+        return this.failEarlyOnGlobalRollbackOnly;
+    }
+
+    /**
+     * Set whether {@code doRollback} should be performed on failure of the
+     * {@code doCommit} call. Typically not necessary and thus to be avoided,
+     * as it can potentially override the commit exception with a subsequent rollback exception
+     * @param rollbackOnCommitFailure
+     */
+    public void setRollbackOnCommitFailure(boolean rollbackOnCommitFailure) {
+        this.rollbackOnCommitFailure = rollbackOnCommitFailure;
+    }
+
+    public boolean isRollbackOnCommitFailure() {
+        return this.rollbackOnCommitFailure;
     }
 
     // Implementation of PlatformTransactionManager
