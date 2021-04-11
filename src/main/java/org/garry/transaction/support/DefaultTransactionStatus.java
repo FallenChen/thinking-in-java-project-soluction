@@ -75,4 +75,14 @@ public class DefaultTransactionStatus extends AbstractTransactionStatus{
     public boolean isDebug() {
         return this.debug;
     }
+
+    /**
+     * Return the holder for resources that have been suspended for this transaction,
+     * if any
+     * @return
+     */
+    @Nullable
+    public Object getSuspendedResources() {
+        return this.suspendedResources;
+    }
 }

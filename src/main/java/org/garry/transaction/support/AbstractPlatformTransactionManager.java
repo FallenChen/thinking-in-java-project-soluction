@@ -216,7 +216,9 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
         return this.rollbackOnCommitFailure;
     }
 
+    // --------------------------------------------
     // Implementation of PlatformTransactionManager
+    // --------------------------------------------
 
     /**
      * This implementation handles propagation behavior. Delegates to
@@ -864,6 +866,33 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
        }
     }
 
+    /**
+     * Clean up after completion, clearing synchronization if necessary,
+     * and invoking doCleanupAfterCompletion
+     * @param status
+     */
+    private void cleanupAfterCompletion(DefaultTransactionStatus status)
+    {
+        status.setCompleted();
+        if(status.isNewSynchronization())
+        {
+            TransactionSynchronizationManager.clear();
+        }
+        if(status.isNewTransaction())
+        {
+            doCleanupAfterCompletion(status.getTransaction());
+        }
+        if(status.getSuspendedResources()!=null)
+        {
+           if(status.isDebug())
+           {
+               logger.debug("Resuming suspended transaction after completion of inner transaction");
+           }
+           Object transaction = (status.hasTransaction()) ? status.getTransaction(): null;
+           resume(transaction,(SuspendedResourcesHolder) status.getSuspendedResources());
+        }
+    }
+
 
     /**
      * Actually invoke the {@code afterCompletion} methods of the
@@ -876,8 +905,9 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
         TransactionSynchronizationUtils.invokeAfterCompletion(synchronizations,completionStatus);
     }
 
+    // ----------------------------------------------
     // Template methods to be implemented in subclass
-
+    // ----------------------------------------------
     /**
      * Return a transaction object for the current transaction state.
      * The returned object will usually be specific to the concrete transaction
@@ -931,8 +961,11 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
      * @throws TransactionException
      */
     protected Object doSuspend(Object transaction) throws TransactionException {
-        return null;
+        throw new TransactionSuspensionNotSupportedException(
+                "Transaction manager [" + getClass().getName() + "] does not support transaction suspension"
+        );
     }
+
 
     /**
      * Resume the resources of the current transaction.
@@ -943,7 +976,9 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
      * @throws TransactionException
      */
     protected void doResume(@Nullable Object transaction, Object suspendedResources) throws TransactionException {
-
+        throw new TransactionSuspensionNotSupportedException(
+                "Transaction manager [" + getClass().getName() + "] does not support transaction suspension"
+        );
     }
 
     /**
@@ -990,7 +1025,10 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
      * @throws TransactionException
      */
     protected void doSetRollbackOnly(DefaultTransactionStatus status) throws TransactionException {
-
+        throw new IllegalTransactionStateException(
+                "Participating in existing transactions is not supported - when 'isExistingTransaction' "
+                + "returns true, appropriate 'doSetRollbackOnly' behavior must be provided"
+        );
     }
 
     /**
@@ -1002,7 +1040,9 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
      */
     protected void registerAfterCompletionWithExistingTransaction(Object transaction, List<TransactionSynchronization> synchronizations)
             throws TransactionException {
-
+        logger.debug("Cannot register Spring after-completion synchronization with existing transaction - " +
+                "processing Spring after-completion callbacks immediately, with outcome status 'unknown' ");
+        invokeAfterCompletion(synchronizations, TransactionSynchronization.STATUS_UNKNOWN);
     }
 
     /**
