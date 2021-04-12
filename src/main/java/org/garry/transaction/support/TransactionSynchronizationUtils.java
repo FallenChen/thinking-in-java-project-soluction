@@ -56,8 +56,16 @@ public abstract class TransactionSynchronizationUtils {
         return resourceRef;
     }
 
+    /**
+     * Trigger {@code flush} callbacks on all currently registered synchronizations.
+     *
+     */
     public static void triggerFlush()
     {
+        for(TransactionSynchronization synchronization : TransactionSynchronizationManager.getSynchronizations())
+        {
+            synchronization.flush();
+        }
     }
 
     /**
@@ -67,17 +75,36 @@ public abstract class TransactionSynchronizationUtils {
      */
     public static void triggerBeforeCommit(boolean readOnly)
     {
-
+        for(TransactionSynchronization synchronization: TransactionSynchronizationManager.getSynchronizations())
+        {
+            synchronization.beforeCommit(readOnly);
+        }
     }
 
+    /**
+     * Trigger {@code beforeCompletion} callbacks on all currently registered synchronizations
+     */
     public static void triggerBeforeCompletion()
     {
+        for(TransactionSynchronization synchronization: TransactionSynchronizationManager.getSynchronizations())
+        {
+            try{
+                synchronization.beforeCompletion();
+            }
+            catch (Throwable tsex)
+            {
+                logger.error("TransactionSynchronization.beforeCompletion threw exception",tsex);
+            }
+        }
 
     }
 
+    /**
+     *
+     */
     public static void triggerAfterCommit()
     {
-
+        invokeAfterCommit(TransactionSynchronizationManager.getSynchronizations());
     }
 
     /**
@@ -87,16 +114,24 @@ public abstract class TransactionSynchronizationUtils {
      */
     public static void invokeAfterCommit(@Nullable List<TransactionSynchronization> synchronizations)
     {
-
+        if(synchronizations != null)
+        {
+            for(TransactionSynchronization synchronization: synchronizations)
+            {
+                synchronization.afterCommit();
+            }
+        }
     }
 
     /**
      * Trigger {@code afterCompletion} callbacks on all currently registered synchronizations
-     * @param completionStatus
+     * @param completionStatus the completion status according to the
+     *                         constants in the TransactionSynchronization interface
      */
     public static void triggerAfterCompletion(int completionStatus)
     {
-
+        List<TransactionSynchronization> synchronizations = TransactionSynchronizationManager.getSynchronizations();
+        invokeAfterCompletion(synchronizations,completionStatus);
     }
 
     /**
@@ -110,7 +145,16 @@ public abstract class TransactionSynchronizationUtils {
     {
        if(synchronizations != null)
        {
-
+           for(TransactionSynchronization synchronization: synchronizations)
+           {
+               try {
+                   synchronization.afterCompletion(completionStatus);
+               }
+               catch (Throwable tsex)
+               {
+                   logger.error("TransactionSynchronization.afterCompletion threw exception",tsex);
+               }
+           }
        }
     }
 
