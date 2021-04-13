@@ -5,7 +5,6 @@ import org.springframework.core.Constants;
 import org.springframework.lang.Nullable;
 
 import java.io.Serializable;
-import java.util.Objects;
 
 /**
  * Default implementation of the {@link TransactionDefinition} interface,

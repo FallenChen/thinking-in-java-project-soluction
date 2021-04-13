@@ -1,8 +1,6 @@
 package org.garry.transaction.support;
 
-import org.garry.transaction.SavepointManager;
-import org.garry.transaction.TransactionException;
-import org.garry.transaction.TransactionStatus;
+import org.garry.transaction.*;
 import org.springframework.lang.Nullable;
 
 /**
@@ -18,6 +16,10 @@ public abstract class AbstractTransactionStatus implements TransactionStatus {
 
     @Nullable
     private Object savepoint;
+
+    //-----------------------------------------------
+    // Handling of current transaction state
+    //-----------------------------------------------
 
     @Override
     public void setRollbackOnly() {
@@ -76,6 +78,9 @@ public abstract class AbstractTransactionStatus implements TransactionStatus {
         return this.completed;
     }
 
+    //-------------------------------------------------------------
+    // handling of current savepoint state
+    //-------------------------------------------------------------
     /**
      * Set a savepoint for this transaction. Useful for PROPAGATION_NESTED
      * @param savepoint
@@ -119,7 +124,9 @@ public abstract class AbstractTransactionStatus implements TransactionStatus {
         Object savepoint = getSavepoint();
         if(savepoint == null)
         {
-            // throw
+             throw new TransactionUsageException(
+                     "Cannot roll back to savepoint - no savepoint associated with current transaction"
+             );
         }
         getSavepointManager().rollbackToSavepoint(savepoint);
         getSavepointManager().releaseSavepoint(savepoint);
@@ -140,9 +147,9 @@ public abstract class AbstractTransactionStatus implements TransactionStatus {
         setSavepoint(null);
     }
 
-    //
+    //-------------------------------------------------------------
     // Implementation of SavepointManager
-    //
+    //-------------------------------------------------------------
 
     /**
      * This implementation delegates to a SavepointManager for the
@@ -183,6 +190,6 @@ public abstract class AbstractTransactionStatus implements TransactionStatus {
      */
     protected SavepointManager getSavepointManager()
     {
-        return null;
+        throw new NestedTransactionNotSupportedException("This transaction does not support savepoints");
     }
 }
