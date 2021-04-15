@@ -50,6 +50,6 @@ public abstract class TransactionSynchronizationAdapter implements TransactionSy
 
     @Override
     public int getOrder() {
-        return 0;
+        return Ordered.LOWEST_PRECEDENCE;
     }
 }
