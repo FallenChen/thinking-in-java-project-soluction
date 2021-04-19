@@ -6,6 +6,8 @@ import org.garry.transaction.*;
 import org.springframework.core.Constants;
 import org.springframework.lang.Nullable;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.io.Serializable;
 import java.util.List;
 
@@ -257,19 +259,19 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
         } else if (definition.getPropagationBehavior() == TransactionDefinition.PROPAGATION_REQUIRED ||
                 definition.getPropagationBehavior() == TransactionDefinition.PROPAGATION_REQUIRES_NEW ||
                 definition.getPropagationBehavior() == TransactionDefinition.PROPAGATION_NESTED) {
-            SuspendedResourcesHolder suspnededResources = suspend(null);
+            SuspendedResourcesHolder suspendedResources = suspend(null);
             if (debugEnabled) {
                 logger.debug("Creating new transaction with name [" + definition.getName() + "]: " + definition);
             }
             try {
                 boolean newSynchronization = (getTransactionSynchronization() != SYNCHRONIZATION_NEVER);
                 DefaultTransactionStatus status = newTransactionStatus(
-                        definition, transaction, true, newSynchronization, debugEnabled, suspnededResources);
+                        definition, transaction, true, newSynchronization, debugEnabled, suspendedResources);
                 doBegin(transaction, definition);
                 prepareSynchronization(status, definition);
                 return status;
             } catch (RuntimeException | Error ex) {
-                resume(null, suspnededResources);
+                resume(null, suspendedResources);
                 throw ex;
             }
         } else {
@@ -1065,6 +1067,21 @@ public abstract class AbstractPlatformTransactionManager implements PlatformTran
      */
     protected abstract void doBegin(Object transaction, TransactionDefinition definition) throws TransactionException;
 
+    //--------------------------------------------------------------------------
+    // Serialization support
+    //--------------------------------------------------------------------------
+
+    private void readObject(ObjectInputStream ois) throws IOException, ClassNotFoundException {
+        // Rely on default serialization; just initialize state after deserialization
+        ois.defaultReadObject();
+
+        // Initialize transient fields
+        this.logger = LogFactory.getLog(getClass());
+    }
+
+    /**
+     * Holder for suspended resources
+     */
     protected static class SuspendedResourcesHolder {
         @Nullable
         private final Object suspendedResources;
