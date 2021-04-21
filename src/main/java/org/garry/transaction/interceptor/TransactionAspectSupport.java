@@ -104,7 +104,7 @@ public abstract class TransactionAspectSupport implements BeanFactoryAware, Init
     }
 
     @Override
-    public void afterPropertiesSet() throws Exception {
+    public void afterPropertiesSet(){
 
     }
 

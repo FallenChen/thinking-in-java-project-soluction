@@ -32,8 +32,12 @@ public class TransactionInterceptor extends TransactionAspectSupport implements 
     @Nullable
     @Override
     public Object invoke(MethodInvocation invocation) throws Throwable {
+        // Work out the target class: may be {@code null}
+        // The TransactionAttributeSource should be passed the target class
+        // as well as the method, which may be from an interface
         Class<?> targetClass = invocation.getThis() != null ? AopUtils.getTargetClass(invocation.getThis()) : null;
 
+        // Adapt to TransactionAspectSupport's invokeWithinTransaction...
         return invokeWithinTransaction(invocation.getMethod(), targetClass, invocation::proceed);
     }
 
@@ -42,8 +46,10 @@ public class TransactionInterceptor extends TransactionAspectSupport implements 
     //-----------------------------------------
 
     private void writeObject(ObjectOutputStream oos) throws IOException {
+        // Rely on default serialization, although this class itself doesn't carry state anyway...
         oos.defaultWriteObject();
 
+        // Deserialize superclass fields
         oos.writeObject(getTransactionManagerBeanName());
         oos.writeObject(getTransactionManager());
         oos.writeObject(getTransactionAttributeSource());
@@ -51,8 +57,12 @@ public class TransactionInterceptor extends TransactionAspectSupport implements 
     }
 
     private void readObject(ObjectInputStream ois) throws IOException, ClassNotFoundException {
+        // Rely on default serialization, although this class itself doesn't carry state anyway
         ois.defaultReadObject();
 
+        // Serialize all relevant superclass fields
+        // Superclass can't implement Serializable because it also serves as base class
+        // for AspectJ aspects (which are not allowed to implement Serializable)
         setTransactionManagerBeanName((String) ois.readObject());
         setTransactionManager((PlatformTransactionManager) ois.readObject());
         setTransactionAttributeSource((TransactionAttributeSource) ois.readObject());
