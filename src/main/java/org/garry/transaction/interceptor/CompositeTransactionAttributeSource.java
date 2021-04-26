@@ -9,7 +9,7 @@ import java.lang.reflect.Method;
 /**
  * @ClassName Composite {@link TransactionAttributeSource} implementation that iterates
  * over a given array of {@link TransactionAttributeSource} instances
- * @Description TODO
+ * @Description TODO 组合模式？？？
  * @Author cy
  * @Date 2021/4/25 20:13
  */
