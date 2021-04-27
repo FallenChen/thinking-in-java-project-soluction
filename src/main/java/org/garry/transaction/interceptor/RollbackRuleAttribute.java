@@ -35,18 +35,40 @@ public class RollbackRuleAttribute {
         this.exceptionName = exceptionName;
     }
 
+    /**
+     * Return the pattern for the exception name
+     * @return
+     */
     public String getExceptionName() {
         return exceptionName;
     }
 
+    /**
+     * Return the depth of the superclass matching
+     * <p>{@code 0} means {@code ex} matched exactly. Returns
+     * {@code -1} if there is no match.Otherwise,returns depth with the
+     * lowest depth winning</p>
+     * @param ex
+     * @return
+     */
     public int getDepth(Throwable ex)
     {
-        return 0;
+        return getDepth(ex.getClass(),0);
     }
 
     private int getDepth(Class<?> exceptionClass, int depth)
     {
-        return 0;
+        if(exceptionClass.getName().contains(this.exceptionName))
+        {
+            // Found it
+            return depth;
+        }
+        // If we've gone as far as we can go and haven't found it
+        if(exceptionClass == Throwable.class)
+        {
+            return -1;
+        }
+        return getDepth(exceptionClass.getSuperclass(),depth + 1);
     }
 
     @Override
