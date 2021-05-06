@@ -6,7 +6,8 @@ import java.beans.PropertyEditorSupport;
 
 /**
  * @ClassName TransactionAttributeEditor
- * @Description TODO
+ * @Description Accepts a String of form {@code PROPAGATION_NAME, ISOLATION_NAME, readOnly, timeout_NNNN,+Exception1,-Exception2}
+ * where only propagation code is required.
  * @Author cy
  * @Date 2021/5/4 21:28
  */
