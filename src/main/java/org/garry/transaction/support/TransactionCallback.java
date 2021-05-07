@@ -14,7 +14,9 @@ import org.springframework.lang.Nullable;
 public interface TransactionCallback<T>{
 
     /**
-     *
+     * Gets called by {@link TransactionTemplate#execute(TransactionCallback)} within a transactional context.
+     * Does not need to care about transactions itself, although it can retrieve and
+     * influence the status of the current transaction via the given status object,
      * @param status
      * @return
      */
